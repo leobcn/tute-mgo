@@ -78,38 +78,64 @@ func Test_control01(tst *testing.T) {
 		tst.Errorf("ReadAll failed:\n%v", err)
 		return
 	}
-	type ResponseData struct {
-		Ok    bool
-		Users []byte
-	}
-	var rd ResponseData
-	err = json.Unmarshal(got, &rd)
+	io.Pfblue2("got = %v\n", string(got))
+	var result interface{}
+	err = json.Unmarshal(got, &result)
 	if err != nil {
-		tst.Errorf("cannot unmarshal response\n%v", err)
+		tst.Errorf("Unmarshal failed:\n%v", err)
 		return
 	}
-	str := string(rd.Users)
-	io.Pforan("users (str) = %v\n", str)
-
-	// check users
-	var users []*User
-	json.Unmarshal(rd.Users, &users)
-	if err != nil {
-		tst.Errorf("cannot unmarshal users\n%v", err)
+	rmap := result.(map[string]interface{})
+	ok := rmap["OK"].(bool)
+	if !ok {
+		tst.Errorf("response: OK is not true")
 		return
 	}
+	users := rmap["users"].([]interface{})
+	chk.Int(tst, "number of users", len(users), 1)
 	chk.IntAssert(len(users), 1)
-	u := users[0]
-	io.Pf("got user = %+#v\n", u)
-	chk.String(tst, "bender", u.Name)
-	chk.String(tst, "bender@futurama", u.Email)
+	user := users[0].(map[string]interface{})
+	chk.String(tst, user["name"].(string), "bender")
 
 	// delete users
+	err = control.DeleteMany(w, r, &User{Name: "bender"})
+	if err != nil {
+		tst.Errorf("Delete failed:\n%v", err)
+		return
+	}
 	err = control.DeleteMany(w, r, &User{Name: "dorival"})
 	if err != nil {
 		tst.Errorf("Delete failed:\n%v", err)
 	}
+}
+
+func Test_delete01(tst *testing.T) {
+
+	//verbose()
+	chk.PrintTitle("delete01. delete users")
+
+	// get database session
+	session, err := mgo.Dial("localhost")
+	if err != nil {
+		tst.Errorf("Dial failed:\n%v", err)
+		return
+	}
+	defer session.Close()
+
+	// create control
+	database := session.DB("testing_tute-mgo-01")
+	control := NewControl(database)
+
+	// http variables
+	w, r := &web.MockResponseWriter{}, &http.Request{}
+
+	// delete users
 	err = control.DeleteMany(w, r, &User{Name: "bender"})
+	if err != nil {
+		tst.Errorf("Delete failed:\n%v", err)
+		return
+	}
+	err = control.DeleteMany(w, r, &User{Name: "dorival"})
 	if err != nil {
 		tst.Errorf("Delete failed:\n%v", err)
 	}

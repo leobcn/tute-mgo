@@ -5,7 +5,6 @@
 package user
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -77,14 +76,8 @@ func (o *Control) Get(w http.ResponseWriter, r *http.Request, datUser interface{
 		return
 	}
 
-	// set response
-	res["users"], err = json.Marshal(users)
-	if err != nil {
-		err = chk.Err("user.Control.Get: cannot marshal users = %v", users)
-		return
-	}
-
 	// success
+	res["users"] = users
 	res["OK"] = true
 	return
 }
