@@ -33,6 +33,7 @@ func Test_control01(tst *testing.T) {
 		tst.Errorf("Dial failed:\n%v", err)
 		return
 	}
+	defer session.Close()
 
 	// create control
 	database := session.DB("testing_tute-mgo-01")
