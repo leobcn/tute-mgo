@@ -42,7 +42,7 @@ func main() {
 	// routes
 	r := mux.NewRouter()
 	r.HandleFunc("/", web.MakeErrorHandler(root))
-	r.HandleFunc("/addUser", web.MakeHandler(regexp.MustCompile("^/(addUser)"), user.Json2dat, uc.Create, true))
+	r.HandleFunc("/addUser", web.MakeHandler(regexp.MustCompile("^/(addUser)"), user.Json2dat, uc.Add, true))
 	r.HandleFunc("/getUsers", web.MakeHandler(regexp.MustCompile("^/(getUsers)"), user.Json2dat, uc.Get, true))
 	http.Handle("/", r)
 

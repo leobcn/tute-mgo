@@ -5,7 +5,6 @@
 package user
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -28,16 +27,12 @@ func NewControl(database *mgo.Database) *Control {
 	return &Control{database, database.C("users")}
 }
 
-// Create creates new user in database
-func (o *Control) Create(w http.ResponseWriter, r *http.Request, datUser interface{}) (err error) {
-
-	// response
-	res := web.Response{"OK": false}
-	defer func() { fmt.Fprintf(w, res.String()) }()
+// Add creates new user in database
+func (o *Control) Add(w http.ResponseWriter, r *http.Request, datUser interface{}) (res *web.Results, err error) {
 
 	// parse data
 	if datUser == nil {
-		err = chk.Err("user.Control.Create: invalid datUser = %v", datUser)
+		err = chk.Err("user.Control.Add: invalid datUser = %v", datUser)
 		return
 	}
 	user := datUser.(*User)
@@ -49,18 +44,11 @@ func (o *Control) Create(w http.ResponseWriter, r *http.Request, datUser interfa
 	if err != nil {
 		return
 	}
-
-	// success
-	res["OK"] = true
 	return
 }
 
-// Get retrieves Users for given Id, Name, Email, Phone and Tag (in this order of preference)
-func (o *Control) Get(w http.ResponseWriter, r *http.Request, datUser interface{}) (err error) {
-
-	// respose
-	res := web.Response{"OK": false}
-	defer func() { fmt.Fprintf(w, res.String()) }()
+// Get retrieves users
+func (o *Control) Get(w http.ResponseWriter, r *http.Request, datUser interface{}) (res *web.Results, err error) {
 
 	// parse data
 	if datUser == nil {
@@ -76,18 +64,13 @@ func (o *Control) Get(w http.ResponseWriter, r *http.Request, datUser interface{
 		return
 	}
 
-	// success
-	res["users"] = users
-	res["OK"] = true
+	// results
+	res = &web.Results{"users": users}
 	return
 }
 
-// Delete deletes one user with given Id, Name, Email, Phone and Tag (in this order of preference)
-func (o *Control) Delete(w http.ResponseWriter, r *http.Request, datUser interface{}) (err error) {
-
-	// response
-	res := web.Response{"OK": false}
-	defer func() { fmt.Fprintf(w, res.String()) }()
+// Delete deletes one user
+func (o *Control) Delete(w http.ResponseWriter, r *http.Request, datUser interface{}) (res *web.Results, err error) {
 
 	// parse data
 	if datUser == nil {
@@ -99,7 +82,13 @@ func (o *Control) Delete(w http.ResponseWriter, r *http.Request, datUser interfa
 	// find users
 	users, err := o.find(user, false)
 	if err != nil {
-		err = chk.Err("user.Control.Delete: cannot find user with datUser = %v", datUser)
+		err = chk.Err("user.Control.Delete: cannot find user with datUser = %v. err = %v", datUser, err)
+		return
+	}
+
+	// check
+	if users[0] == nil {
+		chk.Err("user.Control.Delete: cannot find user to delete. datUser = %v", datUser)
 		return
 	}
 
@@ -109,18 +98,11 @@ func (o *Control) Delete(w http.ResponseWriter, r *http.Request, datUser interfa
 		chk.Err("user.Control.Delete: cannot remove user = %v; err = %v", users[0], err)
 		return
 	}
-
-	// success
-	res["OK"] = true
 	return
 }
 
-// DeleteMany deletes users with given Id, Name, Email, Phone and Tag (in this order of preference)
-func (o *Control) DeleteMany(w http.ResponseWriter, r *http.Request, datUser interface{}) (err error) {
-
-	// response
-	res := web.Response{"OK": false}
-	defer func() { fmt.Fprintf(w, res.String()) }()
+// DeleteMany deletes users
+func (o *Control) DeleteMany(w http.ResponseWriter, r *http.Request, datUser interface{}) (res *web.Results, err error) {
 
 	// parse data
 	if datUser == nil {
@@ -137,20 +119,21 @@ func (o *Control) DeleteMany(w http.ResponseWriter, r *http.Request, datUser int
 	}
 
 	// delete
-	for _, u := range users {
-		err = o.collection.RemoveId(u.Id)
+	for _, c := range users {
+		if c == nil {
+			continue
+		}
+		err = o.collection.RemoveId(c.Id)
 		if err != nil {
-			chk.Err("user.Control.DeleteMany: cannot remove user = %v; err = %v", u, err)
+			chk.Err("user.Control.DeleteMany: cannot remove user = %v; err = %v", c, err)
 			return
 		}
 	}
-
-	// success
-	res["OK"] = true
 	return
 }
 
 // find finds users with given Id, Name, Email, Phone and Tag (in this order of preference)
+// Note: empty user will return all users
 func (o *Control) find(user *User, many bool) (users []*User, err error) {
 
 	// search key
@@ -164,21 +147,25 @@ func (o *Control) find(user *User, many bool) (users []*User, err error) {
 		key = bson.M{"email": user.Email}
 	case user.Phone != "":
 		key = bson.M{"phone": user.Phone}
-	default:
+	case user.Tag > 0:
 		key = bson.M{"tag": user.Tag}
 	}
 
 	// search
 	query := o.collection.Find(key).Sort("-timestamp")
 	n, err := query.Count()
-	if n < 1 || err != nil {
+	if err != nil {
+		return
+	}
+	if n < 1 {
+		err = chk.Err("cannot find entry in database")
 		return
 	}
 	if many {
 		query.All(&users)
 		return
 	}
-	users = make([]*User, 1)
-	query.One(&users)
+	users = []*User{&User{}}
+	err = query.One(users[0])
 	return
 }

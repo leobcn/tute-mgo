@@ -1,4 +1,4 @@
-// Copyright 2015 Dorival Pedroso. All rights reserved.
+// Copyright 2016 Dorival Pedroso. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 
 	"github.com/cpmech/gosl/chk"
 	"github.com/cpmech/gosl/io"
@@ -39,19 +40,13 @@ func Test_control01(tst *testing.T) {
 	database := session.DB("testing_tute-mgo-01")
 	control := NewControl(database)
 
-	// http variables
-	w, r := &web.MockResponseWriter{}, &http.Request{}
+	// dummy http variables
+	writer, request := &web.MockResponseWriter{}, &http.Request{}
 
 	// create user
-	err = control.Create(w, r, &User{Name: "dorival", Email: "secret", Tag: 123})
+	_, err = control.Add(writer, request, &User{Name: "dorival", Email: "dorival@test.com"})
 	if err != nil {
-		tst.Errorf("Create failed:\n%v", err)
-	}
-
-	// create another user
-	err = control.Create(w, r, &User{Name: "bender", Email: "bender@futurama", Tag: 666})
-	if err != nil {
-		tst.Errorf("Create failed:\n%v", err)
+		tst.Errorf("Add failed:\n%v", err)
 	}
 
 	// create test server
@@ -59,60 +54,129 @@ func Test_control01(tst *testing.T) {
 	defer server.Close()
 
 	// send request and get response
-	dat := strings.NewReader(`{"name":"bender", "email":"bender@futurama", "tag":666}`)
-	res, err := http.Post(server.URL, "application/json", dat)
-	defer res.Body.Close()
+	dat := strings.NewReader(`{"name":"dorival"}`)
+	response, err := http.Post(server.URL, "application/json", dat)
+	defer response.Body.Close()
 
 	// check
 	if err != nil {
 		tst.Errorf("http.Post failed:\n%s", err)
 	}
-	if res.StatusCode != 200 {
-		tst.Errorf("http.Post failed with Status = %v", res.Status)
+	if response.StatusCode != 200 {
+		tst.Errorf("http.Post failed with Status = %v", response.Status)
 		return
 	}
 
-	// check response
-	got, err := ioutil.ReadAll(res.Body)
+	// check results
+	results, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		tst.Errorf("ReadAll failed:\n%v", err)
 		return
 	}
-	io.Pfblue2("got = %v\n", string(got))
-	var result interface{}
-	err = json.Unmarshal(got, &result)
+	io.Pfblue2("results = %v\n", string(results))
+	var res interface{}
+	err = json.Unmarshal(results, &res)
 	if err != nil {
 		tst.Errorf("Unmarshal failed:\n%v", err)
 		return
 	}
-	rmap := result.(map[string]interface{})
-	ok := rmap["OK"].(bool)
-	if !ok {
-		tst.Errorf("response: OK is not true")
-		return
-	}
-	users := rmap["users"].([]interface{})
-	chk.Int(tst, "number of users", len(users), 1)
+	r := res.(map[string]interface{})
+	users := r["users"].([]interface{})
 	chk.IntAssert(len(users), 1)
 	user := users[0].(map[string]interface{})
-	chk.String(tst, user["name"].(string), "bender")
+	chk.String(tst, user["name"].(string), "dorival")
 
 	// delete users
-	err = control.DeleteMany(w, r, &User{Name: "bender"})
-	if err != nil {
-		tst.Errorf("Delete failed:\n%v", err)
-		return
-	}
-	err = control.DeleteMany(w, r, &User{Name: "dorival"})
+	_, err = control.DeleteMany(writer, request, &User{Name: "dorival"})
 	if err != nil {
 		tst.Errorf("Delete failed:\n%v", err)
 	}
 }
 
-func Test_delete01(tst *testing.T) {
+func Test_control02(tst *testing.T) {
 
 	//verbose()
-	chk.PrintTitle("delete01. delete users")
+	chk.PrintTitle("control02. get all users")
+
+	// get database session
+	session, err := mgo.Dial("localhost")
+	if err != nil {
+		tst.Errorf("Dial failed:\n%v", err)
+		return
+	}
+	defer session.Close()
+
+	// create control
+	database := session.DB("testing_tute-mgo-01")
+	control := NewControl(database)
+
+	// dummy http variables
+	writer, request := &web.MockResponseWriter{}, &http.Request{}
+
+	// create users
+	_, err = control.Add(writer, request, &User{Name: "dorival", Email: "dorival@test.com"})
+	if err != nil {
+		tst.Errorf("Add failed:\n%v", err)
+	}
+	_, err = control.Add(writer, request, &User{Name: "bender", Email: "bender@test.org"})
+	if err != nil {
+		tst.Errorf("Add failed:\n%v", err)
+	}
+	_, err = control.Add(writer, request, &User{Name: "leela", Email: "leela@futurama.biz"})
+	if err != nil {
+		tst.Errorf("Add failed:\n%v", err)
+	}
+	_, err = control.Add(writer, request, &User{Name: "hermes", Email: "hermes@here.ca"})
+	if err != nil {
+		tst.Errorf("Add failed:\n%v", err)
+	}
+
+	// create test server
+	server := httptest.NewServer(web.MakeHandler(validpath, Json2dat, control.Get, true))
+	defer server.Close()
+
+	// send request and get response
+	dat := strings.NewReader(`{}`)
+	response, err := http.Post(server.URL, "application/json", dat)
+	defer response.Body.Close()
+
+	// check
+	if err != nil {
+		tst.Errorf("http.Post failed:\n%s", err)
+	}
+	if response.StatusCode != 200 {
+		tst.Errorf("http.Post failed with Status = %v", response.Status)
+		return
+	}
+
+	// check results
+	results, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		tst.Errorf("ReadAll failed:\n%v", err)
+		return
+	}
+	io.Pfblue2("results = %v\n", string(results))
+	var res interface{}
+	err = json.Unmarshal(results, &res)
+	if err != nil {
+		tst.Errorf("Unmarshal failed:\n%v", err)
+		return
+	}
+	r := res.(map[string]interface{})
+	users := r["users"].([]interface{})
+	chk.IntAssert(len(users), 4)
+
+	// delete users
+	_, err = control.DeleteMany(writer, request, &User{Name: ""})
+	if err != nil {
+		tst.Errorf("Delete failed:\n%v", err)
+	}
+}
+
+func Test_control03(tst *testing.T) {
+
+	//verbose()
+	chk.PrintTitle("control03. delete one user")
 
 	// get database session
 	session, err := mgo.Dial("localhost")
@@ -127,15 +191,54 @@ func Test_delete01(tst *testing.T) {
 	control := NewControl(database)
 
 	// http variables
-	w, r := &web.MockResponseWriter{}, &http.Request{}
+	writer, request := &web.MockResponseWriter{}, &http.Request{}
 
-	// delete users
-	err = control.DeleteMany(w, r, &User{Name: "bender"})
+	// create user
+	_, err = control.Add(writer, request, &User{Name: "dorival", Email: "dorival@test.com"})
 	if err != nil {
-		tst.Errorf("Delete failed:\n%v", err)
+		tst.Errorf("Add failed:\n%v", err)
+	}
+
+	// create test server
+	server := httptest.NewServer(web.MakeHandler(validpath, Json2dat, control.Get, true))
+	defer server.Close()
+
+	// send request and get response
+	dat := strings.NewReader(`{"name":"dorival"}`)
+	response, err := http.Post(server.URL, "application/json", dat)
+	defer response.Body.Close()
+
+	// check
+	if err != nil {
+		tst.Errorf("http.Post failed:\n%s", err)
+	}
+	if response.StatusCode != 200 {
+		tst.Errorf("http.Post failed with Status = %v", response.Status)
 		return
 	}
-	err = control.DeleteMany(w, r, &User{Name: "dorival"})
+
+	// check results
+	results, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		tst.Errorf("ReadAll failed:\n%v", err)
+		return
+	}
+	io.Pfblue2("results = %v\n", string(results))
+	var res interface{}
+	err = json.Unmarshal(results, &res)
+	if err != nil {
+		tst.Errorf("Unmarshal failed:\n%v", err)
+		return
+	}
+	r := res.(map[string]interface{})
+	users := r["users"].([]interface{})
+	chk.IntAssert(len(users), 1)
+	user := users[0].(map[string]interface{})
+	id := user["id"].(string)
+	io.Pforan("id = %v\n", id)
+
+	// delete user
+	_, err = control.Delete(writer, request, &User{Id: bson.ObjectIdHex(id)})
 	if err != nil {
 		tst.Errorf("Delete failed:\n%v", err)
 	}
